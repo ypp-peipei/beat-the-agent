@@ -51,6 +51,15 @@
   #controls.ro { pointer-events: none; }
   #controls.shake { animation: shake .3s; }
   @keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+  /* danger: pulsing red frame around the whole screen, a jolt when it starts */
+  #danger { position: fixed; inset: 0; pointer-events: none; z-index: 9; opacity: 0; box-shadow: inset 0 0 70px 26px rgba(214,48,24,.85); background: rgba(214,48,24,.10); transition: opacity .15s; }
+  body.danger #danger { opacity: 1; animation: pulse .62s ease-in-out infinite alternate; }
+  @keyframes pulse { from { opacity: .35; } to { opacity: 1; } }
+  body.jolt #app { animation: jolt .45s; }
+  @keyframes jolt { 10% { transform: translate(-9px, 3px) rotate(-.6deg); } 30% { transform: translate(8px, -4px) rotate(.6deg); } 50% { transform: translate(-6px, 2px); } 70% { transform: translate(4px, -2px); } 90% { transform: translate(-2px, 1px); } }
+  body.danger canvas { border-color: #D63018; box-shadow: 0 0 0 3px rgba(214,48,24,.35); }
+  body.danger #stat2 { animation: pulse .31s ease-in-out infinite alternate; }
+  @media (prefers-reduced-motion: reduce) { body.danger #danger { animation: none; opacity: .8; } body.jolt #app { animation: none; } body.danger #stat2 { animation: none; } }
   .stars { font-size: 34px; letter-spacing: 6px; color: #C9CFD4; margin: 2px 0 8px; }
   .stars b { color: #E2A62B; font-weight: 400; }
   .rank { font-family: Georgia, serif; color: var(--teal); font-size: 34px; font-weight: 700; line-height: 1.05; display: block; margin: 2px 0; }
@@ -72,6 +81,7 @@
 </style>
 </head>
 <body>
+<div id="danger"></div>
 <div id="app">
 
   <!-- ============ intro ============ -->
@@ -288,6 +298,16 @@
         ctx.fillStyle = bc; ctx.fillRect(x + bw / 2 + 1, by + 3.5, 2.5, 5); ctx.fillRect(x - bw / 2 + 2, by + 2, (bw - 4) * soc, bh - 4);
       }
     }
+    // danger banner across the sky
+    if (G.danger) {
+      const pulse = 1 + 0.06 * Math.sin(AT * 10), pop = Math.min(1, (performance.now() - (G.dangerT0 || 0)) / 180), sc = pulse * (0.6 + 0.4 * pop);
+      const label = G.danger === 'high' ? 'VOLTAGE TOO HIGH' : 'VOLTAGE TOO LOW', hint = G.danger === 'high' ? 'CHARGE to soak up the solar' : 'DISCHARGE to help the homes';
+      ctx.save(); ctx.translate(W / 2, top + 52); ctx.scale(sc, sc);
+      ctx.fillStyle = '#D63018'; rr(-128, -27, 256, 54, 12); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2; rr(-123, -22, 246, 44, 9); ctx.stroke();
+      text('⚠ ' + label, 0, -3, { align: 'center', size: 18, bold: true, col: '#fff' }); text(hint, 0, 14, { align: 'center', size: 11.5, col: '#FFE3DA' });
+      ctx.restore();
+    }
     // floating money
     const now = performance.now();
     G.floaters = (G.floaters || []).filter(q => now - q.t0 < 1100);
@@ -329,6 +349,11 @@
   function battUI(soc, a) { $('battFill').style.width = Math.round(soc * 100) + '%'; $('battFill').style.background = a === 2 ? COL.gold : COL.teal; $('battPct').textContent = Math.round(soc * 100) + '%'; }
   function nudge() { const c = $('controls'); c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); if (navigator.vibrate) navigator.vibrate(25); }
 
+  function setDanger(kind) {
+    if (kind && !G.danger) { document.body.classList.remove('jolt'); void document.body.offsetWidth; document.body.classList.add('jolt'); if (navigator.vibrate) navigator.vibrate([120, 60, 120, 60, 200]); G.dangerT0 = performance.now(); }
+    G.danger = kind || null; document.body.classList.toggle('danger', !!kind);
+  }
+
   // one live day on screen, used for the player and for the trained agent's replay
   let liveId = 0;
   function runLive(o) {
@@ -342,8 +367,7 @@
       idleCum += G.idleStep[s.k - 1]; hourSum += gain;
       if (s.k % 4 === 0) { if (Math.abs(hourSum) >= 4) G.floaters.push({ x: f.bx(3), y: f.ly - 40, text: (hourSum > 0 ? '+$' : '−$') + Math.abs(Math.round(hourSum)), col: hourSum > 0 ? COL.teal : COL.orange, t0: performance.now() }); hourSum = 0; }
       const out = s.vHi > CFG.vMax || s.vLo < CFG.vMin;
-      if (out && !wasOut && navigator.vibrate) navigator.vibrate(60);
-      wasOut = out;
+      setDanger(s.vHi > CFG.vMax ? 'high' : s.vLo < CFG.vMin ? 'low' : null); wasOut = out;
       view.k = s.k; view.s = s; hud(o.title, s.k, idleCum - (s.bill + s.pen), s.violSteps, s.soc); battUI(s.soc, a);
       if (o.onStep) o.onStep(s, a, out);
     };
@@ -353,7 +377,7 @@
       while (!s.done && acc >= o.stepMs(s)) { acc -= o.stepMs(s); doStep(); }
       AT = now / 1000; redraw();
       if (!s.done) requestAnimationFrame(frame);
-      else { tr.bill = s.bill; tr.pen = s.pen; tr.violSteps = s.violSteps; tr.total = s.bill + s.pen; setTimeout(() => { if (id === liveId) o.onDone(tr); }, 1000); }
+      else { setDanger(null); tr.bill = s.bill; tr.pen = s.pen; tr.violSteps = s.violSteps; tr.total = s.bill + s.pen; setTimeout(() => { if (id === liveId) o.onDone(tr); }, 1000); }
     };
     // test hook: ?at=K jumps straight to step K and draws once (headless screenshots have no animation clock)
     if (qs.get('at')) { for (let i = 0; i < +qs.get('at') && !s.done; i++) doStep(); AT = 1.23; redraw(); return; }
@@ -387,7 +411,7 @@
 
   // ---------------------------------------------------------------- phase 2: the agent trains
   function startTraining(firstTime) {
-    liveId++; G.mode = 'train'; show('sGame'); $('controls').style.display = 'none'; fit();
+    liveId++; setDanger(null); G.mode = 'train'; show('sGame'); $('controls').style.display = 'none'; fit();
     $('stat1Lab').textContent = 'Agent now'; $('stat2Lab').textContent = 'Outside limits'; $('stat3Lab').textContent = 'Exploring';
     const ag = C.makeAgent(Math.floor(Math.random() * 1e9), WEIGHTS[G.wKey]); G.agent = ag; G.curve = [];
     const first = C.trainEpisode(ag, G.day);                 // its very first try, on your day: random button presses
