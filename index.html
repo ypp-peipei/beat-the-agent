@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1F497D">
+<title>Beat the Agent · a reinforcement learning game</title>
+<meta name="description" content="Run a battery on a solar-heavy feeder for one day, then watch a reinforcement learning agent learn the same job in your browser.">
+<style>
+  :root { --navy:#1F497D; --teal:#006E90; --orange:#DB6B37; --gold:#88632B; --ink:#182F3C; --mute:#5E6E78; --bg:#F6F4EF; --card:#FFFFFF; --line:#D9DEE2; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overscroll-behavior: none; }
+  body { display: flex; justify-content: center; }
+  #app { width: 100%; max-width: 480px; min-height: 100%; display: flex; flex-direction: column; padding: calc(10px + env(safe-area-inset-top)) 14px calc(12px + env(safe-area-inset-bottom)); }
+  h1 { font-family: Georgia, "Times New Roman", serif; font-size: 30px; line-height: 1.1; margin: 0 0 6px; color: var(--navy); }
+  h2 { font-family: Georgia, "Times New Roman", serif; font-size: 22px; margin: 0 0 8px; color: var(--navy); line-height: 1.2; }
+  p { margin: 0 0 10px; line-height: 1.45; font-size: 16px; }
+  .mute { color: var(--mute); font-size: 14px; }
+  .screen { display: none; flex-direction: column; flex: 1; }
+  .screen.on { display: flex; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .steps { margin: 0; padding: 0; list-style: none; }
+  .steps li { display: flex; gap: 12px; padding: 8px 0; font-size: 16px; line-height: 1.4; }
+  .steps b.n { flex: 0 0 28px; height: 28px; border-radius: 50%; background: var(--navy); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  button { font: inherit; border: 0; border-radius: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  .primary { background: var(--navy); color: #fff; font-weight: 700; font-size: 18px; padding: 15px; width: 100%; }
+  .ghost { background: transparent; color: var(--navy); font-weight: 600; font-size: 16px; padding: 12px; width: 100%; border: 1.5px solid var(--navy); margin-top: 8px; }
+  .link { background: none; color: var(--teal); font-size: 15px; padding: 10px; text-decoration: underline; width: 100%; }
+  .spacer { flex: 1; }
+  /* HUD */
+  #hud { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+  #hudTitle { font-family: Georgia, serif; font-weight: 700; color: var(--navy); font-size: 18px; }
+  #hudClock { font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 700; }
+  #stats { display: flex; gap: 8px; margin-bottom: 8px; }
+  .stat { flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+  .stat small { display: block; color: var(--mute); font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; }
+  .stat span { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat span.bad { color: var(--orange); }
+  canvas { width: 100%; display: block; background: var(--card); border: 1px solid var(--line); border-radius: 12px; touch-action: none; }
+  #controls { display: flex; gap: 10px; margin-top: 10px; }
+  .hold { flex: 1; padding: 18px 6px; font-size: 18px; font-weight: 700; color: #fff; touch-action: none; transition: transform .05s, filter .05s; }
+  .hold small { display: block; font-weight: 500; font-size: 12.5px; opacity: .9; margin-top: 2px; }
+  #btnC { background: var(--teal); } #btnD { background: var(--gold); }
+  .hold.down { transform: scale(.97); filter: brightness(1.25); box-shadow: 0 0 0 4px rgba(24,47,60,.18); }
+  #msg { min-height: 22px; text-align: center; font-size: 15px; color: var(--mute); margin-top: 8px; }
+  /* results */
+  .bar { margin: 10px 0 14px; }
+  .bar .lab { display: flex; justify-content: space-between; font-size: 15px; margin-bottom: 4px; }
+  .bar .lab b { font-variant-numeric: tabular-nums; }
+  .bar .track { height: 18px; background: #E9ECEE; border-radius: 9px; overflow: hidden; position: relative; }
+  .bar .fill { height: 100%; border-radius: 9px; width: 0; transition: width .9s cubic-bezier(.2,.7,.2,1); }
+  .bar .sub { font-size: 12.5px; color: var(--mute); margin-top: 3px; }
+  .chips { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
+  .chip { text-align: left; background: #fff; border: 1.5px solid var(--line); padding: 11px 13px; font-size: 15.5px; color: var(--ink); }
+  .chip b { display: block; color: var(--navy); }
+  .chip.sel { border-color: var(--navy); background: #EEF3F8; }
+  .pubs { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.45; }
+  .pubs li { margin-bottom: 7px; }
+  a { color: var(--teal); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ intro ============ -->
+  <section class="screen on" id="sIntro">
+    <div class="spacer" style="flex:.3"></div>
+    <p class="mute" style="letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">A 90-second game about reinforcement learning</p>
+    <h1>Beat the Agent</h1>
+    <p>You run the batteries on a neighborhood feeder with a lot of rooftop solar, for one day.</p>
+    <div class="card">
+      <ul class="steps">
+        <li><b class="n">1</b><span><b>You play.</b> At noon, solar pushes the voltage too high. In the evening, EV charging pulls it too low and power is expensive. Charge and discharge at the right time.</span></li>
+        <li><b class="n">2</b><span><b>An agent learns.</b> It starts by pressing buttons at random and practises 40,000 days, right here in your browser.</span></li>
+        <li><b class="n">3</b><span><b>Compare.</b> Nobody tells the agent the right move. Reward is its only teacher.</span></li>
+      </ul>
+    </div>
+    <p class="mute"><b>Score</b> = dollars saved compared with doing nothing. Each 15 minutes outside the voltage limits costs a penalty.</p>
+    <div class="spacer"></div>
+    <button class="primary" id="btnStart">Start my day</button>
+    <button class="link" id="btnAbout1">About this game</button>
+  </section>
+
+  <!-- ============ play / train / replay ============ -->
+  <section class="screen" id="sGame">
+    <div id="hud"><span id="hudTitle">Your turn</span><span id="hudClock">00:00</span></div>
+    <div id="stats">
+      <div class="stat"><small id="stat1Lab">Saved</small><span id="stat1">$0</span></div>
+      <div class="stat"><small id="stat2Lab">Outside limits</small><span id="stat2">0 min</span></div>
+      <div class="stat"><small id="stat3Lab">Battery</small><span id="stat3">25%</span></div>
+    </div>
+    <canvas id="cv"></canvas>
+    <div id="controls">
+      <button class="hold" id="btnC">CHARGE<small>hold · soaks up solar</small></button>
+      <button class="hold" id="btnD">DISCHARGE<small>hold · feeds the evening</small></button>
+    </div>
+    <div id="msg"></div>
+    <div class="spacer"></div>
+  </section>
+
+  <!-- ============ result ============ -->
+  <section class="screen" id="sResult">
+    <h2 id="resHead"></h2>
+    <p id="resText"></p>
+    <div class="card" id="bars"></div>
+    <p class="mute" id="resNote"></p>
+    <div class="spacer"></div>
+    <button class="primary" id="btnAgain">Play again</button>
+    <button class="ghost" id="btnReward">Change the agent's reward</button>
+    <button class="link" id="btnAbout2">Who made this?</button>
+  </section>
+
+  <!-- ============ reward design ============ -->
+  <section class="screen" id="sReward">
+    <h2>What should the agent care about?</h2>
+    <p>The agent only chases the reward you give it. Pick one and it will train again from scratch.</p>
+    <div class="chips">
+      <button class="chip" data-w="both"><b>The bill and the voltage</b>Save money and stay inside the limits.</button>
+      <button class="chip" data-w="cost"><b>Only the bill</b>Save money. Voltage is not in the reward.</button>
+      <button class="chip" data-w="volt"><b>Only the voltage</b>Stay inside the limits. Money is not in the reward.</button>
+    </div>
+    <p class="mute">Your score is always judged on both.</p>
+    <div class="spacer"></div>
+    <button class="primary" id="btnTrain">Train the agent</button>
+    <button class="link" id="btnBack1">Back</button>
+  </section>
+
+  <!-- ============ about ============ -->
+  <section class="screen" id="sAbout">
+    <h2>About this game</h2>
+    <div class="card">
+      <p style="margin-bottom:4px"><b>Yansong Pei, Ph.D.</b></p>
+      <p class="mute" style="margin-bottom:6px">Postdoctoral Research Associate<br>Electrical and Computer Engineering, Michigan State University</p>
+      <p style="margin:0"><a href="mailto:peiyanso@msu.edu">peiyanso@msu.edu</a></p>
+    </div>
+    <div class="card">
+      <p><b>What is real here</b></p>
+      <p class="mute">The feeder is a six-bus radial line solved by power flow at every step. The agent is tabular Q-learning. It trains on random days in your browser and is then tested on the day you played. Nothing is recorded or sent anywhere. The feeder, prices and penalties are illustrative, not a real utility's.</p>
+    </div>
+    <div class="card">
+      <p><b>The research behind it</b></p>
+      <ul class="pubs">
+        <li>Y. Pei, K. Ye, J. Zhao, Y. Yao, T. Su, F. Ding, “Visibility-enhanced model-free deep reinforcement learning algorithm for voltage control in realistic distribution systems using smart inverters,” <i>Applied Energy</i>, 2024.</li>
+        <li>Y. Pei, Y. Yao, J. Zhao, F. Ding, J. Wang, “Two-stage deep reinforcement learning for distribution system voltage regulation and peak load management,” <i>IEEE PES General Meeting</i>, 2023.</li>
+        <li>Y. Pei, Y. Yao, J. Zhao, J. Hao, F. Ding, J. Wang, “Multi-agent hierarchical deep reinforcement learning for HVAC control with flexible DERs,” <i>IEEE Trans. Smart Grid</i>, 2025.</li>
+      </ul>
+    </div>
+    <div class="spacer"></div>
+    <button class="primary" id="btnBack2">Back</button>
+  </section>
+</div>
+
+<script src="core.js"></script>
+<script>
+(function () {
+  'use strict';
+  const C = Core, CFG = C.CFG, N = CFG.steps;
+  const $ = id => document.getElementById(id);
+  const COL = { navy: '#1F497D', teal: '#006E90', orange: '#DB6B37', gold: '#88632B', ink: '#182F3C', mute: '#5E6E78', line: '#D9DEE2', grid: '#E8ECEF' };
+  const qs = new URLSearchParams(location.search);
+  const STEP_MS = +(qs.get('step') || 300);            // one 15-minute step of the player's day
+  const WEIGHTS = { both: { cost: 1, volt: 1 }, cost: { cost: 1, volt: 0 }, volt: { cost: 0, volt: 1 } };
+
+  // ---------------------------------------------------------------- state
+  const G = { day: null, idle: null, you: null, first: null, agentTr: null, agent: null, wKey: 'both', mode: 'intro', lastScreen: 'sIntro', curve: [] };
+  function show(id) { document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id)); if (id !== 'sAbout') G.lastScreen = id; window.scrollTo(0, 0); }
+  const fmt$ = v => (v < 0 ? '−$' : '$') + Math.abs(Math.round(v)).toLocaleString('en-US');
+  const clock = k => { const m = Math.min(N, k) * 15; return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+
+  // ---------------------------------------------------------------- canvas
+  const cv = $('cv'), ctx = cv.getContext('2d');
+  let W = 0, H = 0;
+  function fit() {
+    const w = cv.clientWidth, avail = window.innerHeight - 250;
+    W = w; H = Math.max(300, Math.min(avail, w * 1.12));
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    cv.style.height = H + 'px'; cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', () => { if (G.mode !== 'intro') { fit(); redraw(); } });
+
+  const V_LO = 0.925, V_HI = 1.085;
+  function chartGeom() { const top = H * 0.42, bot = H * 0.88, x0 = 34, x1 = W - 10; return { top, bot, x0, x1, x: k => x0 + k / N * (x1 - x0), y: v => bot - (v - V_LO) / (V_HI - V_LO) * (bot - top) }; }
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  function text(s, x, y, o) { o = o || {}; ctx.font = (o.bold ? '700 ' : '') + (o.size || 11) + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif'; ctx.fillStyle = o.col || COL.mute; ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'alphabetic'; ctx.fillText(s, x, y); }
+
+  // voltage chart with band, price strip, "do nothing" forecast, and a trace drawn up to step k
+  function drawChart(tr, k, opts) {
+    const g = chartGeom();
+    // price strip
+    const py0 = g.bot + 6, py1 = g.bot + 15;
+    for (let i = 0; i < N; i++) { const p = C.price(i * CFG.dtH); ctx.fillStyle = p > 0.3 ? 'rgba(219,107,55,.75)' : p > 0.15 ? 'rgba(219,107,55,.32)' : 'rgba(219,107,55,.10)'; ctx.fillRect(g.x(i), py0, g.x(i + 1) - g.x(i) + .5, py1 - py0); }
+    text('price', g.x0 - 4, py1 - 1, { align: 'right', size: 10 });
+    for (let h = 0; h <= 24; h += 6) { text(h === 24 ? '24h' : String(h), g.x(h * 4), py1 + 12, { align: h === 0 ? 'left' : h === 24 ? 'right' : 'center', size: 10.5 }); }
+    // band
+    ctx.fillStyle = 'rgba(0,110,144,.07)'; ctx.fillRect(g.x0, g.y(CFG.vMax), g.x1 - g.x0, g.y(CFG.vMin) - g.y(CFG.vMax));
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = COL.orange; ctx.lineWidth = 1.4;
+    for (const v of [CFG.vMax, CFG.vMin]) { ctx.beginPath(); ctx.moveTo(g.x0, g.y(v)); ctx.lineTo(g.x1, g.y(v)); ctx.stroke(); text(v.toFixed(2), g.x0 - 4, g.y(v) + 4, { align: 'right', size: 10.5, col: COL.orange }); }
+    ctx.setLineDash([]);
+    text('1.00', g.x0 - 4, g.y(1) + 4, { align: 'right', size: 10.5 });
+    text('voltage, highest and lowest house', g.x0 + 2, g.top + 2, { size: 10.5 });
+    // do-nothing forecast
+    if (G.idle && !(opts && opts.noGhost)) {
+      ctx.strokeStyle = '#A9B4BC'; ctx.lineWidth = 1.3; ctx.setLineDash([2, 3]);
+      for (const key of ['vHi', 'vLo']) { ctx.beginPath(); for (let i = 0; i < N; i++) { const X = g.x(i + .5), Y = g.y(G.idle[key][i]); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); } ctx.stroke(); }
+      ctx.setLineDash([]);
+      text('dotted: if nobody acts', g.x1 - 2, g.top + 2, { align: 'right', size: 10.5 });
+    }
+    if (!tr) return;
+    // battery action ribbon under the band
+    const ay = g.bot - 5;
+    for (let i = 0; i < k; i++) { const a = tr.act[i]; if (a === 1) continue; ctx.fillStyle = a === 0 ? COL.teal : COL.gold; ctx.fillRect(g.x(i), ay, g.x(i + 1) - g.x(i) + .5, 5); }
+    // traces; out-of-band parts in orange
+    const col = (opts && opts.col) || COL.navy;
+    for (const key of ['vHi', 'vLo']) {
+      for (let i = 1; i < k; i++) {
+        const a = tr[key][i - 1], b = tr[key][i], out = key === 'vHi' ? b > CFG.vMax : b < CFG.vMin;
+        ctx.strokeStyle = out ? COL.orange : col; ctx.lineWidth = out ? 3 : 2.2; ctx.beginPath(); ctx.moveTo(g.x(i - .5), g.y(a)); ctx.lineTo(g.x(i + .5), g.y(b)); ctx.stroke();
+      }
+    }
+    if (k > 0 && k < N) { ctx.strokeStyle = 'rgba(24,47,60,.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(g.x(k), g.top + 8); ctx.lineTo(g.x(k), py1); ctx.stroke(); }
+  }
+
+  // the feeder picture: sun/moon, substation, five houses coloured by voltage, two batteries
+  function drawFeeder(s) {
+    const top = 6, bot = H * 0.38, t = s ? s.t : 0;
+    const dayl = C.pvShape(t);
+    const sky = ctx.createLinearGradient(0, top, 0, bot);
+    const mixc = (a, b, u) => 'rgb(' + a.map((v, i) => Math.round(v + (b[i] - v) * u)).join(',') + ')';
+    sky.addColorStop(0, mixc([214, 222, 236], [255, 244, 214], dayl)); sky.addColorStop(1, '#FFFFFF');
+    ctx.save(); rr(1, 1, W - 2, bot, 11); ctx.clip(); ctx.fillStyle = sky; ctx.fillRect(0, 0, W, bot); ctx.restore();
+    // sun or moon on an arc
+    const u = (t - 6) / 13;
+    if (u > 0 && u < 1) { const sx = 30 + u * (W - 60), sy = top + 34 - Math.sin(Math.PI * u) * 20 + 6; ctx.fillStyle = '#EEB230'; ctx.beginPath(); ctx.arc(sx, sy, 11 + 3 * dayl, 0, 7); ctx.fill(); if (s && s.day.cloud[Math.min(N - 1, s.k - 1)] < 1) { ctx.fillStyle = 'rgba(150,160,170,.9)'; ctx.beginPath(); ctx.arc(sx - 9, sy + 5, 10, 0, 7); ctx.arc(sx + 3, sy + 2, 13, 0, 7); ctx.arc(sx + 15, sy + 6, 9, 0, 7); ctx.fill(); } }
+    else { ctx.fillStyle = '#B9C4D6'; ctx.beginPath(); ctx.arc(W - 40, top + 26, 9, 0, 7); ctx.fill(); }
+    const ly = bot - 46, x0 = 30, x1 = W - 26, bx = i => x0 + i / 5 * (x1 - x0);
+    ctx.strokeStyle = COL.navy; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x0, ly); ctx.lineTo(x1, ly); ctx.stroke();
+    // power direction chevrons at the head of the feeder
+    if (s && Math.abs(s.gridP) > 0.02) { const dir = s.gridP > 0 ? 1 : -1; ctx.strokeStyle = dir > 0 ? COL.navy : COL.orange; ctx.lineWidth = 2; for (let j = 0; j < 3; j++) { const cx = (bx(0) + bx(1)) / 2 + (j - 1) * 9; ctx.beginPath(); ctx.moveTo(cx - 3 * dir, ly - 12); ctx.lineTo(cx + 3 * dir, ly - 7); ctx.lineTo(cx - 3 * dir, ly - 2); ctx.stroke(); } text(dir > 0 ? 'from grid' : 'back to grid', (bx(0) + bx(1)) / 2, ly - 17, { align: 'center', size: 10, col: dir > 0 ? COL.mute : COL.orange }); }
+    ctx.fillStyle = COL.navy; rr(x0 - 14, ly - 14, 28, 28, 5); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(x0 + 3, ly - 9); ctx.lineTo(x0 - 5, ly + 1); ctx.lineTo(x0, ly + 1); ctx.lineTo(x0 - 3, ly + 9); ctx.lineTo(x0 + 5, ly - 2); ctx.lineTo(x0, ly - 2); ctx.closePath(); ctx.fill();
+    for (let i = 1; i <= 5; i++) {
+      const x = bx(i), v = s && s.V ? s.V[i] : 1, out = v > CFG.vMax || v < CFG.vMin, c = out ? COL.orange : COL.navy;
+      // house
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = c; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - 13, ly - 4); ctx.lineTo(x - 13, ly - 20); ctx.lineTo(x, ly - 31); ctx.lineTo(x + 13, ly - 20); ctx.lineTo(x + 13, ly - 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+      if (C.FEEDER.pvShare[i] > 0) { ctx.fillStyle = dayl > 0.05 ? '#26406A' : '#8E9BAE'; ctx.beginPath(); ctx.moveTo(x - 12, ly - 22); ctx.lineTo(x - 2, ly - 31); ctx.lineTo(x + 1, ly - 28); ctx.lineTo(x - 9, ly - 19); ctx.closePath(); ctx.fill(); }
+      if ((i === 4 || i === 5) && t >= 18 && t < 22.5) { ctx.fillStyle = COL.gold; rr(x + 3, ly - 12, 9, 6, 2); ctx.fill(); }   // EV plugged in
+      if (out) { ctx.fillStyle = 'rgba(219,107,55,.22)'; ctx.beginPath(); ctx.arc(x, ly, 11, 0, 7); ctx.fill(); }
+      ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, ly, 5, 0, 7); ctx.fill();
+      text(v.toFixed(3), x, ly + 17, { align: 'center', size: 10.5, col: out ? COL.orange : COL.mute, bold: out });
+      // battery
+      if (C.FEEDER.bessBus.indexOf(i) >= 0) {
+        const bw = 26, bh = 12, by = ly + 23, soc = s ? s.soc : CFG.soc0, act = s ? s.pb : 0;
+        ctx.strokeStyle = act > 0 ? COL.teal : act < 0 ? COL.gold : '#7C8A94'; ctx.lineWidth = act ? 2.4 : 1.6; rr(x - bw / 2, by, bw, bh, 3); ctx.stroke();
+        ctx.fillStyle = ctx.strokeStyle; ctx.fillRect(x + bw / 2 + 1, by + 3.5, 2.5, 5);
+        ctx.fillStyle = act > 0 ? COL.teal : act < 0 ? COL.gold : '#7C8A94'; ctx.fillRect(x - bw / 2 + 2, by + 2, (bw - 4) * soc, bh - 4);
+      }
+    }
+  }
+
+  // learning curve (training screen): score of the agent's current best policy on today's day, by practice days
+  function drawCurve() {
+    const top = 22, bot = H * 0.36, x0 = 40, x1 = W - 12, T = C.TRAIN_EPISODES;
+    const vals = G.curve.map(p => p[1]).concat([0, G.you ? G.youScore : 0]);
+    let lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals); hi = Math.max(hi, 700); lo = Math.min(lo, -100);
+    const X = e => x0 + e / T * (x1 - x0), Y = v => bot - (v - lo) / (hi - lo) * (bot - top);
+    text("agent's score on your day", x0, 14, { size: 11 });
+    ctx.strokeStyle = COL.grid; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x1, Y(0)); ctx.stroke(); text('$0', x0 - 5, Y(0) + 4, { align: 'right', size: 10.5 });
+    if (G.you) { ctx.setLineDash([5, 4]); ctx.strokeStyle = COL.gold; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x0, Y(G.youScore)); ctx.lineTo(x1, Y(G.youScore)); ctx.stroke(); ctx.setLineDash([]); text('you ' + fmt$(G.youScore), x1 - 2, Y(G.youScore) - 4, { align: 'right', size: 11, col: COL.gold, bold: true }); }
+    ctx.strokeStyle = COL.teal; ctx.lineWidth = 2.4; ctx.lineJoin = 'round'; ctx.beginPath();
+    G.curve.forEach((p, i) => { i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])); }); ctx.stroke();
+    if (G.curve.length) { const p = G.curve[G.curve.length - 1]; ctx.fillStyle = COL.teal; ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 4, 0, 7); ctx.fill(); }
+    text('0', x0, bot + 13, { size: 10.5 }); text(T.toLocaleString('en-US') + ' practice days', x1, bot + 13, { align: 'right', size: 10.5 });
+  }
+
+  let view = { tr: null, k: 0, s: null };
+  function redraw() {
+    ctx.clearRect(0, 0, W, H);
+    if (G.mode === 'train') { drawCurve(); drawChart(view.tr, view.k, { col: COL.teal, noGhost: true }); }
+    else { drawFeeder(view.s); drawChart(view.tr, view.k, { col: G.mode === 'replay' ? COL.teal : COL.navy }); }
+  }
+  function hud(title, k, saved, viol, soc) {
+    $('hudTitle').textContent = title; $('hudClock').textContent = clock(k);
+    $('stat1').textContent = fmt$(saved); $('stat2').textContent = viol * 15 + ' min'; $('stat2').className = viol ? 'bad' : ''; $('stat3').textContent = Math.round(soc * 100) + '%';
+  }
+
+  // ---------------------------------------------------------------- phase 1: the player's day
+  let held = 1, timer = null;
+  function bindHold(btn, a) {
+    const down = e => { e.preventDefault(); held = a; btn.classList.add('down'); }, up = e => { e.preventDefault(); if (held === a) held = 1; btn.classList.remove('down'); };
+    btn.addEventListener('pointerdown', down); btn.addEventListener('pointerup', up); btn.addEventListener('pointercancel', up); btn.addEventListener('pointerleave', up);
+    btn.addEventListener('contextmenu', e => e.preventDefault());
+  }
+  bindHold($('btnC'), 0); bindHold($('btnD'), 2);
+  window.addEventListener('keydown', e => { if (e.key === 'ArrowLeft') held = 0; if (e.key === 'ArrowRight') held = 2; });
+  window.addEventListener('keyup', e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') held = 1; });
+
+  function startPlay() {
+    G.day = C.makeDay(Math.floor(Math.random() * 1e9));
+    G.idle = C.runDay(G.day, C.idle);
+    G.mode = 'play'; show('sGame'); $('controls').style.display = 'flex'; $('stat1Lab').textContent = 'Saved'; $('stat3Lab').textContent = 'Battery';
+    fit();
+    const s = C.reset(G.day), tr = { vHi: [], vLo: [], soc: [], act: [], V: [] };
+    let idleCum = 0, auto = qs.get('auto');
+    view = { tr, k: 0, s: null }; hud('Your turn', 0, 0, 0, s.soc); redraw();
+    $('msg').textContent = 'Get ready…'; held = 1;
+    const tick = () => {
+      const a = auto ? ((s.k * .25 >= 10.5 && s.k * .25 < 14.5) ? 0 : (s.k * .25 >= 17 && s.k * .25 < 22) ? 2 : 1) : held;
+      C.step(s, a); tr.vHi.push(s.vHi); tr.vLo.push(s.vLo); tr.soc.push(s.soc); tr.act.push(a); tr.V.push(s.V);
+      idleCum = 0; for (let i = 0; i < s.k; i++) idleCum += G.idleStep[i];
+      view.k = s.k; view.s = s; hud('Your turn', s.k, idleCum - (s.bill + s.pen), s.violSteps, s.soc); redraw();
+      const t = s.t;
+      $('msg').textContent = a === 0 && s.pb === 0 ? 'Battery is full' : a === 2 && s.pb === 0 ? 'Battery is empty' : t < 9 ? 'Morning. Solar is on its way.' : t < 15.5 ? 'Solar peak. Watch the top line.' : t < 17 ? 'Evening peak is coming.' : t < 22.5 ? 'Expensive power, EVs charging.' : 'Night.';
+      if (s.done) { clearInterval(timer); tr.bill = s.bill; tr.pen = s.pen; tr.violSteps = s.violSteps; tr.total = s.bill + s.pen; G.you = tr; G.youScore = G.idle.total - tr.total; setTimeout(() => startTraining(true), 900); }
+    };
+    // per-step cost of doing nothing, for the live "saved" counter
+    (function () { const z = C.reset(G.day); G.idleStep = []; let prev = 0; while (!z.done) { C.step(z, 1); G.idleStep.push(z.bill + z.pen - prev); prev = z.bill + z.pen; } })();
+    setTimeout(() => { timer = setInterval(tick, STEP_MS); }, 1200);
+  }
+
+  // ---------------------------------------------------------------- phase 2: the agent trains
+  function startTraining(firstTime) {
+    G.mode = 'train'; show('sGame'); $('controls').style.display = 'none'; fit();
+    $('stat1Lab').textContent = 'Agent now'; $('stat2Lab').textContent = 'Outside limits'; $('stat3Lab').textContent = 'Exploring';
+    const ag = C.makeAgent(Math.floor(Math.random() * 1e9), WEIGHTS[G.wKey]); G.agent = ag; G.curve = [];
+    const first = C.trainEpisode(ag, G.day);                 // its very first try, on your day: random button presses
+    G.first = first; G.firstScore = G.idle.total - first.total;
+    G.curve.push([1, G.firstScore]);
+    view = { tr: first, k: N, s: null };
+    const T = C.TRAIN_EPISODES, FAST = !!qs.get('fast'), perFrameMax = FAST ? T / 8 : Math.ceil(T / (60 * 9));   // lasts at least ~9 s
+    let nextEval = 200, last = null;
+    $('msg').textContent = 'It starts by pressing buttons at random.';
+    const frame = () => {
+      const t0 = performance.now(); let n = 0;
+      while (ag.ep < T && n < perFrameMax && (FAST || performance.now() - t0 < 14)) { last = C.trainEpisode(ag); n++; }
+      if (ag.ep >= nextEval || ag.ep >= T) {
+        const g = C.runDay(G.day, s => C.greedy(ag, s)); G.curve.push([ag.ep, G.idle.total - g.total]); G.evalTr = g;
+        nextEval = ag.ep + (ag.ep < 2000 ? 200 : 500);
+      }
+      view = { tr: last, k: N, s: null };
+      const g = G.evalTr || first;
+      $('hudTitle').textContent = 'The agent is practising'; $('hudClock').textContent = 'day ' + ag.ep.toLocaleString('en-US');
+      $('stat1').textContent = fmt$(G.curve[G.curve.length - 1][1]); $('stat2').textContent = g.violSteps * 15 + ' min'; $('stat2').className = g.violSteps ? 'bad' : ''; $('stat3').textContent = Math.round(C.epsilon(ag) * 100) + '%';
+      const f = ag.ep / T;
+      $('msg').textContent = f < .15 ? 'Mostly random moves. It is finding out what hurts.' : f < .5 ? 'It repeats what paid off and explores less.' : f < .95 ? 'Fine-tuning the timing.' : 'Done. Now it plays your day.';
+      redraw();
+      if (ag.ep < T) requestAnimationFrame(frame); else setTimeout(startReplay, 900);
+    };
+    setTimeout(() => requestAnimationFrame(frame), firstTime ? 1400 : 500);
+  }
+
+  // ---------------------------------------------------------------- phase 3: the trained agent plays your day
+  function startReplay() {
+    G.mode = 'replay'; $('stat1Lab').textContent = 'Saved'; $('stat3Lab').textContent = 'Battery';
+    const s = C.reset(G.day), tr = { vHi: [], vLo: [], soc: [], act: [], V: [] }; let idleCum = 0;
+    view = { tr, k: 0, s: null }; $('msg').textContent = 'Same day, same batteries. No more exploring.';
+    const iv = setInterval(() => {
+      const a = C.greedy(G.agent, s); C.step(s, a); tr.vHi.push(s.vHi); tr.vLo.push(s.vLo); tr.soc.push(s.soc); tr.act.push(a); tr.V.push(s.V);
+      idleCum += G.idleStep[s.k - 1]; view.k = s.k; view.s = s; hud('The trained agent', s.k, idleCum - (s.bill + s.pen), s.violSteps, s.soc); redraw();
+      if (s.done) { clearInterval(iv); tr.bill = s.bill; tr.pen = s.pen; tr.violSteps = s.violSteps; tr.total = s.bill + s.pen; G.agentTr = tr; G.agentScore = G.idle.total - tr.total; setTimeout(showResult, 1100); }
+    }, qs.get('fast') ? 8 : 60);
+  }
+
+  // ---------------------------------------------------------------- results
+  function showResult() {
+    G.mode = 'result'; show('sResult');
+    const you = G.youScore, ag = G.agentScore, first = G.firstScore, d = Math.round(ag - you);
+    const sub = tr => (tr.violSteps ? tr.violSteps * 15 + ' min outside the limits' : 'always inside the limits') + ' · bill ' + fmt$(tr.bill);
+    let head, txt;
+    if (G.wKey === 'both') {
+      head = d > 15 ? 'The agent beat you by ' + fmt$(d) : d < -15 ? 'You beat the agent by ' + fmt$(-d) : 'A tie with the agent';
+      txt = d < -15 ? 'Well played. Its first try scored ' + fmt$(first) + '. After 40,000 practice days it nearly matched you, with no instructions at all.'
+                    : 'Its first try scored ' + fmt$(first) + '. It was never shown the right move. It only saw the reward after each action.';
+    } else if (G.wKey === 'cost') {
+      head = 'Told to care only about the bill';
+      txt = 'The agent got a bill of ' + fmt$(G.agentTr.bill) + ' and left the voltage outside the limits for ' + G.agentTr.violSteps * 15 + ' minutes. It did what the reward said, not what you meant.';
+    } else {
+      head = 'Told to care only about the voltage';
+      txt = 'The agent held the voltage, with ' + G.agentTr.violSteps * 15 + ' minutes outside the limits, and ignored the price of power. Its bill was ' + fmt$(G.agentTr.bill) + '.';
+    }
+    $('resHead').textContent = head; $('resText').textContent = txt;
+    const rows = [['Agent, first try', first, G.first, '#A9B4BC'], ['You', you, G.you, COL.gold], ['Agent, after 40,000 days', ag, G.agentTr, COL.teal]];
+    const max = Math.max(1, ...rows.map(r => r[1]));
+    $('bars').innerHTML = rows.map((r, i) => '<div class="bar"><div class="lab"><span>' + r[0] + '</span><b>' + fmt$(r[1]) + '</b></div><div class="track"><div class="fill" id="f' + i + '" style="background:' + r[3] + '"></div></div><div class="sub">' + sub(r[2]) + '</div></div>').join('');
+    requestAnimationFrame(() => setTimeout(() => rows.forEach((r, i) => { $('f' + i).style.width = Math.max(1.5, r[1] / max * 100) + '%'; }), 60));
+    $('resNote').textContent = 'Score = dollars saved against doing nothing on this day (bill ' + fmt$(G.idle.bill) + ', ' + G.idle.violSteps * 15 + ' min outside the limits), with a penalty for every 15 minutes outside the limits.';
+  }
+
+  // ---------------------------------------------------------------- navigation
+  $('btnStart').onclick = startPlay; $('btnAgain').onclick = () => { G.wKey = 'both'; startPlay(); };
+  $('btnReward').onclick = () => { show('sReward'); document.querySelectorAll('.chip').forEach(c => c.classList.toggle('sel', c.dataset.w === G.wKey)); };
+  document.querySelectorAll('.chip').forEach(c => c.onclick = () => { G.wKey = c.dataset.w; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('sel', x === c)); });
+  $('btnTrain').onclick = () => startTraining(false); $('btnBack1').onclick = () => show('sResult');
+  $('btnAbout1').onclick = $('btnAbout2').onclick = () => show('sAbout'); $('btnBack2').onclick = () => show(G.lastScreen);
+  if (qs.get('auto')) startPlay();
+  // test hook: ?demo=result|cost|volt|about|reward computes a whole round synchronously and jumps to that screen
+  if (qs.get('demo')) {
+    const d = qs.get('demo'); G.wKey = d === 'cost' || d === 'volt' ? d : 'both';
+    G.day = C.makeDay(20261112); G.idle = C.runDay(G.day, C.idle);
+    const rule = s => { const t = s.k * .25; return (t >= 11 && t < 13.5) ? 0 : (t >= 18 && t < 21) ? 2 : 1; };
+    G.you = C.runDay(G.day, rule); G.youScore = G.idle.total - G.you.total;
+    const ag = C.makeAgent(7, WEIGHTS[G.wKey]); G.agent = ag; G.first = C.trainEpisode(ag, G.day); G.firstScore = G.idle.total - G.first.total;
+    while (ag.ep < C.TRAIN_EPISODES) C.trainEpisode(ag);
+    G.agentTr = C.runDay(G.day, s => C.greedy(ag, s)); G.agentScore = G.idle.total - G.agentTr.total;
+    showResult(); if (d === 'about') show('sAbout'); if (d === 'reward') $('btnReward').onclick();
+  }
+})();
+</script>
+</body>
+</html>
