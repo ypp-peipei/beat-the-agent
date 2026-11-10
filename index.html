@@ -78,7 +78,7 @@
     <p class="mute"><b>Score</b> = dollars saved compared with doing nothing. Each 15 minutes outside the voltage limits costs a penalty.</p>
     <div class="spacer"></div>
     <button class="primary" id="btnStart">Start my day</button>
-    <button class="link" id="btnAbout1">About this game</button>
+    <p class="mute" style="text-align:center;margin:12px 0 0">Not in the mood to play? <a href="https://www.linkedin.com/in/yansong-pei-6686b8173" target="_blank" rel="noopener">Yansong Pei on LinkedIn</a> · <a href="#" id="btnAbout1">about</a></p>
   </section>
 
   <!-- ============ play / train / replay ============ -->
@@ -131,7 +131,8 @@
     <div class="card">
       <p style="margin-bottom:4px"><b>Yansong Pei, Ph.D.</b></p>
       <p class="mute" style="margin-bottom:6px">Postdoctoral Research Associate<br>Electrical and Computer Engineering, Michigan State University</p>
-      <p style="margin:0"><a href="mailto:peiyanso@msu.edu">peiyanso@msu.edu</a></p>
+      <p style="margin:0 0 4px"><a href="mailto:peiyanso@msu.edu">peiyanso@msu.edu</a></p>
+      <p style="margin:0"><a href="https://www.linkedin.com/in/yansong-pei-6686b8173" target="_blank" rel="noopener">LinkedIn: yansong-pei</a></p>
     </div>
     <div class="card">
       <p><b>What is real here</b></p>
@@ -392,7 +393,7 @@
   $('btnReward').onclick = () => { show('sReward'); document.querySelectorAll('.chip').forEach(c => c.classList.toggle('sel', c.dataset.w === G.wKey)); };
   document.querySelectorAll('.chip').forEach(c => c.onclick = () => { G.wKey = c.dataset.w; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('sel', x === c)); });
   $('btnTrain').onclick = () => startTraining(false); $('btnBack1').onclick = () => show('sResult');
-  $('btnAbout1').onclick = $('btnAbout2').onclick = () => show('sAbout'); $('btnBack2').onclick = () => show(G.lastScreen);
+  $('btnAbout1').onclick = $('btnAbout2').onclick = e => { if (e) e.preventDefault(); show('sAbout'); }; $('btnBack2').onclick = () => show(G.lastScreen);
   if (qs.get('auto')) startPlay();
   // test hook: ?demo=result|cost|volt|about|reward computes a whole round synchronously and jumps to that screen
   if (qs.get('demo')) {
