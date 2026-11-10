@@ -10,7 +10,7 @@ in the browser (40,000 practice days) and plays the player's day.
 
 Feeder, prices and penalties are illustrative.
 
-Test hooks: `?auto=1` plays a fixed rule for the human, `?demo=result|cost|volt|reward|about`
+Test hooks: `?auto=1` plays a fixed rule for the human (`?auto=idle` does nothing), `&at=K` jumps to step K, `?demo=result|cost|volt|reward|about`
 jumps to a screen, `?step=120` changes the speed of the player's day (ms per 15 minutes).
 
 ## Try it on a phone on the same Wi-Fi

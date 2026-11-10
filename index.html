@@ -38,10 +38,22 @@
   .stat span.bad { color: var(--orange); }
   canvas { width: 100%; display: block; background: var(--card); border: 1px solid var(--line); border-radius: 12px; touch-action: none; }
   #controls { display: flex; gap: 10px; margin-top: 10px; }
-  .hold { flex: 1; padding: 18px 6px; font-size: 18px; font-weight: 700; color: #fff; touch-action: none; transition: transform .05s, filter .05s; }
-  .hold small { display: block; font-weight: 500; font-size: 12.5px; opacity: .9; margin-top: 2px; }
-  #btnC { background: var(--teal); } #btnD { background: var(--gold); }
-  .hold.down { transform: scale(.97); filter: brightness(1.25); box-shadow: 0 0 0 4px rgba(24,47,60,.18); }
+  .mode { flex: 1; padding: 12px 4px 10px; font-size: 16px; font-weight: 700; background: #fff; border: 2px solid var(--line); color: var(--mute); transition: transform .08s, background .12s, color .12s, border-color .12s; }
+  .mode .ic { display: block; font-size: 22px; line-height: 1; margin-bottom: 2px; }
+  .mode small { display: block; font-weight: 500; font-size: 12px; margin-top: 2px; }
+  .mode:active { transform: scale(.96); }
+  #btnC.sel { background: var(--teal); border-color: var(--teal); color: #fff; }
+  #btnD.sel { background: var(--gold); border-color: var(--gold); color: #fff; }
+  #btnP { flex: .8; } #btnP.sel { border-color: var(--ink); color: var(--ink); }
+  #batt { width: 54px; height: 24px; border: 2.5px solid currentColor; border-radius: 6px; margin: 2px auto 3px; position: relative; padding: 2px; }
+  #batt::after { content: ""; position: absolute; right: -7px; top: 5px; width: 4px; height: 9px; background: currentColor; border-radius: 0 2px 2px 0; }
+  #battFill { display: block; height: 100%; width: 25%; background: var(--teal); border-radius: 2px; transition: width .15s linear, background .15s; }
+  #controls.ro { pointer-events: none; }
+  #controls.shake { animation: shake .3s; }
+  @keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+  .stars { font-size: 34px; letter-spacing: 6px; color: #C9CFD4; margin: 2px 0 8px; }
+  .stars b { color: #E2A62B; font-weight: 400; }
+  .rank { font-family: Georgia, serif; color: var(--teal); font-size: 34px; font-weight: 700; line-height: 1.05; display: block; margin: 2px 0; }
   #msg { min-height: 22px; text-align: center; font-size: 15px; color: var(--mute); margin-top: 8px; }
   /* results */
   .bar { margin: 10px 0 14px; }
@@ -70,7 +82,7 @@
     <p>You run the batteries on a neighborhood feeder with a lot of rooftop solar, for one day.</p>
     <div class="card">
       <ul class="steps">
-        <li><b class="n">1</b><span><b>You play.</b> At noon, solar pushes the voltage too high. In the evening, EV charging pulls it too low and power is expensive. Charge and discharge at the right time.</span></li>
+        <li><b class="n">1</b><span><b>You play.</b> At noon, solar pushes the voltage too high. In the evening, EV charging pulls it too low and power is expensive. Tap <b>Charge</b>, <b>Pause</b> or <b>Discharge</b> at the right time.</span></li>
         <li><b class="n">2</b><span><b>An agent learns.</b> It starts by pressing buttons at random and practises 40,000 days, right here in your browser.</span></li>
         <li><b class="n">3</b><span><b>Compare.</b> Nobody tells the agent the right move. Reward is its only teacher.</span></li>
       </ul>
@@ -91,8 +103,9 @@
     </div>
     <canvas id="cv"></canvas>
     <div id="controls">
-      <button class="hold" id="btnC">CHARGE<small>hold · soaks up solar</small></button>
-      <button class="hold" id="btnD">DISCHARGE<small>hold · feeds the evening</small></button>
+      <button class="mode" id="btnC"><span class="ic">↓</span>CHARGE<small>store the solar</small></button>
+      <button class="mode sel" id="btnP"><div id="batt"><i id="battFill"></i></div>PAUSE<small id="battPct">25%</small></button>
+      <button class="mode" id="btnD"><span class="ic">↑</span>DISCHARGE<small>power the homes</small></button>
     </div>
     <div id="msg"></div>
     <div class="spacer"></div>
@@ -100,6 +113,7 @@
 
   <!-- ============ result ============ -->
   <section class="screen" id="sResult">
+    <div id="resTop"></div>
     <h2 id="resHead"></h2>
     <p id="resText"></p>
     <div class="card" id="bars"></div>
@@ -222,42 +236,62 @@
     if (k > 0 && k < N) { ctx.strokeStyle = 'rgba(24,47,60,.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(g.x(k), g.top + 8); ctx.lineTo(g.x(k), py1); ctx.stroke(); }
   }
 
-  // the feeder picture: sun/moon, substation, five houses coloured by voltage, two batteries
+  // the feeder picture: sun/moon, substation, five houses that react to their voltage, two batteries, moving power
+  let AT = 0;                                              // animation clock, seconds
+  function fgeom() { const top = 6, bot = H * 0.38, x0 = 30, x1 = W - 26; return { top, bot, ly: bot - 46, x0, x1, bx: i => x0 + i / 5 * (x1 - x0) }; }
   function drawFeeder(s) {
-    const top = 6, bot = H * 0.38, t = s ? s.t : 0;
+    const f = fgeom(), top = f.top, bot = f.bot, ly = f.ly, x0 = f.x0, x1 = f.x1, bx = f.bx, t = s ? s.t : 0;
     const dayl = C.pvShape(t);
     const sky = ctx.createLinearGradient(0, top, 0, bot);
     const mixc = (a, b, u) => 'rgb(' + a.map((v, i) => Math.round(v + (b[i] - v) * u)).join(',') + ')';
-    sky.addColorStop(0, mixc([214, 222, 236], [255, 244, 214], dayl)); sky.addColorStop(1, '#FFFFFF');
+    sky.addColorStop(0, mixc([196, 207, 226], [255, 242, 205], dayl)); sky.addColorStop(1, '#FFFFFF');
     ctx.save(); rr(1, 1, W - 2, bot, 11); ctx.clip(); ctx.fillStyle = sky; ctx.fillRect(0, 0, W, bot); ctx.restore();
-    // sun or moon on an arc
     const u = (t - 6) / 13;
-    if (u > 0 && u < 1) { const sx = 30 + u * (W - 60), sy = top + 34 - Math.sin(Math.PI * u) * 20 + 6; ctx.fillStyle = '#EEB230'; ctx.beginPath(); ctx.arc(sx, sy, 11 + 3 * dayl, 0, 7); ctx.fill(); if (s && s.day.cloud[Math.min(N - 1, s.k - 1)] < 1) { ctx.fillStyle = 'rgba(150,160,170,.9)'; ctx.beginPath(); ctx.arc(sx - 9, sy + 5, 10, 0, 7); ctx.arc(sx + 3, sy + 2, 13, 0, 7); ctx.arc(sx + 15, sy + 6, 9, 0, 7); ctx.fill(); } }
-    else { ctx.fillStyle = '#B9C4D6'; ctx.beginPath(); ctx.arc(W - 40, top + 26, 9, 0, 7); ctx.fill(); }
-    const ly = bot - 46, x0 = 30, x1 = W - 26, bx = i => x0 + i / 5 * (x1 - x0);
+    if (u > 0 && u < 1) {
+      const sx = 30 + u * (W - 60), sy = top + 40 - Math.sin(Math.PI * u) * 20, r = 11 + 3 * dayl;
+      ctx.strokeStyle = '#EEB230'; ctx.lineWidth = 2; for (let j = 0; j < 8; j++) { const a = j * Math.PI / 4 + AT * .6; ctx.beginPath(); ctx.moveTo(sx + Math.cos(a) * (r + 3), sy + Math.sin(a) * (r + 3)); ctx.lineTo(sx + Math.cos(a) * (r + 7 + 2 * dayl), sy + Math.sin(a) * (r + 7 + 2 * dayl)); ctx.stroke(); }
+      ctx.fillStyle = '#EEB230'; ctx.beginPath(); ctx.arc(sx, sy, r, 0, 7); ctx.fill();
+      if (s && s.day.cloud[Math.min(N - 1, Math.max(0, s.k - 1))] < 1) { ctx.fillStyle = 'rgba(150,160,170,.95)'; ctx.beginPath(); ctx.arc(sx - 9, sy + 5, 10, 0, 7); ctx.arc(sx + 3, sy + 2, 13, 0, 7); ctx.arc(sx + 15, sy + 6, 9, 0, 7); ctx.fill(); }
+    } else { ctx.fillStyle = '#E9EDF5'; ctx.beginPath(); ctx.arc(W - 40, top + 26, 9, 0, 7); ctx.fill(); ctx.fillStyle = mixc([196, 207, 226], [255, 242, 205], dayl); ctx.beginPath(); ctx.arc(W - 36, top + 23, 8, 0, 7); ctx.fill(); }
     ctx.strokeStyle = COL.navy; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x0, ly); ctx.lineTo(x1, ly); ctx.stroke();
-    // power direction chevrons at the head of the feeder
-    if (s && Math.abs(s.gridP) > 0.02) { const dir = s.gridP > 0 ? 1 : -1; ctx.strokeStyle = dir > 0 ? COL.navy : COL.orange; ctx.lineWidth = 2; for (let j = 0; j < 3; j++) { const cx = (bx(0) + bx(1)) / 2 + (j - 1) * 9; ctx.beginPath(); ctx.moveTo(cx - 3 * dir, ly - 12); ctx.lineTo(cx + 3 * dir, ly - 7); ctx.lineTo(cx - 3 * dir, ly - 2); ctx.stroke(); } text(dir > 0 ? 'from grid' : 'back to grid', (bx(0) + bx(1)) / 2, ly - 17, { align: 'center', size: 10, col: dir > 0 ? COL.mute : COL.orange }); }
+    // power moving along the line: toward the houses when importing, back to the grid when exporting
+    if (s && Math.abs(s.gridP) > 0.02) {
+      const dir = s.gridP > 0 ? 1 : -1, n = 7, sp = 0.25 + Math.min(1, Math.abs(s.gridP)) * 0.9;
+      ctx.fillStyle = dir > 0 ? '#7FA3CF' : COL.orange;
+      for (let j = 0; j < n; j++) { let ph = ((AT * sp * dir + j / n) % 1 + 1) % 1; ctx.beginPath(); ctx.arc(x0 + 16 + ph * (bx(3) - x0 - 16), ly, 2.6, 0, 7); ctx.fill(); }
+      text(dir > 0 ? 'power from the grid' : 'solar flowing back', (bx(0) + bx(2)) / 2, ly - 38, { align: 'center', size: 10, col: dir > 0 ? COL.mute : COL.orange });
+    }
     ctx.fillStyle = COL.navy; rr(x0 - 14, ly - 14, 28, 28, 5); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(x0 + 3, ly - 9); ctx.lineTo(x0 - 5, ly + 1); ctx.lineTo(x0, ly + 1); ctx.lineTo(x0 - 3, ly + 9); ctx.lineTo(x0 + 5, ly - 2); ctx.lineTo(x0, ly - 2); ctx.closePath(); ctx.fill();
     for (let i = 1; i <= 5; i++) {
-      const x = bx(i), v = s && s.V ? s.V[i] : 1, out = v > CFG.vMax || v < CFG.vMin, c = out ? COL.orange : COL.navy;
-      // house
+      const x = bx(i), v = s && s.V ? s.V[i] : 1, hi = v > CFG.vMax, lo = v < CFG.vMin, out = hi || lo, c = out ? COL.orange : COL.navy;
+      const jx = hi ? Math.sin(AT * 40 + i) * 1.2 : 0;                       // over-voltage: the house buzzes
       ctx.fillStyle = '#fff'; ctx.strokeStyle = c; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(x - 13, ly - 4); ctx.lineTo(x - 13, ly - 20); ctx.lineTo(x, ly - 31); ctx.lineTo(x + 13, ly - 20); ctx.lineTo(x + 13, ly - 4); ctx.closePath(); ctx.fill(); ctx.stroke();
-      if (C.FEEDER.pvShare[i] > 0) { ctx.fillStyle = dayl > 0.05 ? '#26406A' : '#8E9BAE'; ctx.beginPath(); ctx.moveTo(x - 12, ly - 22); ctx.lineTo(x - 2, ly - 31); ctx.lineTo(x + 1, ly - 28); ctx.lineTo(x - 9, ly - 19); ctx.closePath(); ctx.fill(); }
-      if ((i === 4 || i === 5) && t >= 18 && t < 22.5) { ctx.fillStyle = COL.gold; rr(x + 3, ly - 12, 9, 6, 2); ctx.fill(); }   // EV plugged in
+      ctx.beginPath(); ctx.moveTo(x - 13 + jx, ly - 4); ctx.lineTo(x - 13 + jx, ly - 20); ctx.lineTo(x + jx, ly - 31); ctx.lineTo(x + 13 + jx, ly - 20); ctx.lineTo(x + 13 + jx, ly - 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+      // window: lit at night, glaring when the voltage is too high, browning out when it is too low
+      const night = dayl < 0.08;
+      let wc = night ? '#F6D36B' : '#DCE6F0';
+      if (hi) wc = Math.sin(AT * 30 + i) > 0 ? '#FFF6C2' : '#FFC83D';
+      if (lo) wc = Math.sin(AT * 17 + i * 2) > 0.2 ? '#5B5140' : '#C9A545';
+      if (hi) { ctx.fillStyle = 'rgba(255,200,60,.35)'; ctx.beginPath(); ctx.arc(x + jx, ly - 14, 13 + 2 * Math.sin(AT * 30), 0, 7); ctx.fill(); }
+      ctx.fillStyle = wc; ctx.fillRect(x - 5 + jx, ly - 19, 10, 9); ctx.strokeStyle = c; ctx.lineWidth = 1; ctx.strokeRect(x - 5 + jx, ly - 19, 10, 9);
+      if (hi) { ctx.strokeStyle = COL.orange; ctx.lineWidth = 2; for (let j = 0; j < 3; j++) { const a = -Math.PI / 2 + (j - 1) * .6, r0 = 34, r1 = 39 + 3 * Math.sin(AT * 25 + j); ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * r0, ly - 6 + Math.sin(a) * r0); ctx.lineTo(x + Math.cos(a) * r1, ly - 6 + Math.sin(a) * r1); ctx.stroke(); } }
+      if (C.FEEDER.pvShare[i] > 0) { ctx.fillStyle = dayl > 0.05 ? '#26406A' : '#8E9BAE'; ctx.beginPath(); ctx.moveTo(x - 12 + jx, ly - 22); ctx.lineTo(x - 2 + jx, ly - 31); ctx.lineTo(x + 1 + jx, ly - 28); ctx.lineTo(x - 9 + jx, ly - 19); ctx.closePath(); ctx.fill(); }
+      if ((i === 4 || i === 5) && t >= 18 && t < 22.5) { ctx.fillStyle = COL.gold; const ex = i === 5 ? x - 28 : x + 15; rr(ex, ly - 11, 13, 7, 3); ctx.fill(); ctx.fillStyle = COL.ink; ctx.beginPath(); ctx.arc(ex + 3, ly - 4, 2, 0, 7); ctx.arc(ex + 10, ly - 4, 2, 0, 7); ctx.fill(); }   // an EV plugged in
       if (out) { ctx.fillStyle = 'rgba(219,107,55,.22)'; ctx.beginPath(); ctx.arc(x, ly, 11, 0, 7); ctx.fill(); }
       ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, ly, 5, 0, 7); ctx.fill();
       text(v.toFixed(3), x, ly + 17, { align: 'center', size: 10.5, col: out ? COL.orange : COL.mute, bold: out });
-      // battery
       if (C.FEEDER.bessBus.indexOf(i) >= 0) {
-        const bw = 26, bh = 12, by = ly + 23, soc = s ? s.soc : CFG.soc0, act = s ? s.pb : 0;
-        ctx.strokeStyle = act > 0 ? COL.teal : act < 0 ? COL.gold : '#7C8A94'; ctx.lineWidth = act ? 2.4 : 1.6; rr(x - bw / 2, by, bw, bh, 3); ctx.stroke();
-        ctx.fillStyle = ctx.strokeStyle; ctx.fillRect(x + bw / 2 + 1, by + 3.5, 2.5, 5);
-        ctx.fillStyle = act > 0 ? COL.teal : act < 0 ? COL.gold : '#7C8A94'; ctx.fillRect(x - bw / 2 + 2, by + 2, (bw - 4) * soc, bh - 4);
+        const bw = 26, bh = 12, by = ly + 23, soc = s ? s.soc : CFG.soc0, act = s ? s.pb : 0, bc = act > 0 ? COL.teal : act < 0 ? COL.gold : '#7C8A94';
+        if (act) { ctx.fillStyle = bc; for (let j = 0; j < 2; j++) { let ph = ((AT * 1.6 + j / 2) % 1); if (act < 0) ph = 1 - ph; ctx.beginPath(); ctx.arc(x - 20, ly + 2 + ph * (by + 4 - ly), 2.4, 0, 7); ctx.fill(); } ctx.strokeStyle = bc; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x - 20, ly); ctx.lineTo(x - 20, by + 6); ctx.lineTo(x - bw / 2, by + 6); ctx.stroke(); }
+        ctx.strokeStyle = bc; ctx.lineWidth = act ? 2.4 : 1.6; ctx.fillStyle = '#fff'; rr(x - bw / 2, by, bw, bh, 3); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = bc; ctx.fillRect(x + bw / 2 + 1, by + 3.5, 2.5, 5); ctx.fillRect(x - bw / 2 + 2, by + 2, (bw - 4) * soc, bh - 4);
       }
     }
+    // floating money
+    const now = performance.now();
+    G.floaters = (G.floaters || []).filter(q => now - q.t0 < 1100);
+    for (const q of G.floaters) { const a = (now - q.t0) / 1100; ctx.globalAlpha = 1 - a * a; text(q.text, q.x, q.y - a * 26, { align: 'center', size: 15, bold: true, col: q.col }); ctx.globalAlpha = 1; }
   }
 
   // learning curve (training screen): score of the agent's current best policy on today's day, by practice days
@@ -286,43 +320,74 @@
     $('stat1').textContent = fmt$(saved); $('stat2').textContent = viol * 15 + ' min'; $('stat2').className = viol ? 'bad' : ''; $('stat3').textContent = Math.round(soc * 100) + '%';
   }
 
-  // ---------------------------------------------------------------- phase 1: the player's day
-  let held = 1, timer = null;
-  function bindHold(btn, a) {
-    const down = e => { e.preventDefault(); held = a; btn.classList.add('down'); }, up = e => { e.preventDefault(); if (held === a) held = 1; btn.classList.remove('down'); };
-    btn.addEventListener('pointerdown', down); btn.addEventListener('pointerup', up); btn.addEventListener('pointercancel', up); btn.addEventListener('pointerleave', up);
-    btn.addEventListener('contextmenu', e => e.preventDefault());
-  }
-  bindHold($('btnC'), 0); bindHold($('btnD'), 2);
-  window.addEventListener('keydown', e => { if (e.key === 'ArrowLeft') held = 0; if (e.key === 'ArrowRight') held = 2; });
-  window.addEventListener('keyup', e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') held = 1; });
+  // ---------------------------------------------------------------- the three-way battery switch
+  let held = 1;
+  const BTN = [$('btnC'), $('btnP'), $('btnD')];
+  function setMode(a) { held = a; BTN.forEach((b, i) => b.classList.toggle('sel', i === a)); }
+  BTN.forEach((b, a) => { b.addEventListener('pointerdown', e => { e.preventDefault(); setMode(a); }); b.addEventListener('contextmenu', e => e.preventDefault()); });
+  window.addEventListener('keydown', e => { if (e.key === 'ArrowLeft') setMode(0); if (e.key === 'ArrowDown' || e.key === ' ') setMode(1); if (e.key === 'ArrowRight') setMode(2); });
+  function battUI(soc, a) { $('battFill').style.width = Math.round(soc * 100) + '%'; $('battFill').style.background = a === 2 ? COL.gold : COL.teal; $('battPct').textContent = Math.round(soc * 100) + '%'; }
+  function nudge() { const c = $('controls'); c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); if (navigator.vibrate) navigator.vibrate(25); }
 
-  function startPlay() {
-    G.day = C.makeDay(Math.floor(Math.random() * 1e9));
-    G.idle = C.runDay(G.day, C.idle);
-    G.mode = 'play'; show('sGame'); $('controls').style.display = 'flex'; $('stat1Lab').textContent = 'Saved'; $('stat3Lab').textContent = 'Battery';
-    fit();
-    const s = C.reset(G.day), tr = { vHi: [], vLo: [], soc: [], act: [], V: [] };
-    let idleCum = 0, auto = qs.get('auto');
-    view = { tr, k: 0, s: null }; hud('Your turn', 0, 0, 0, s.soc); redraw();
-    $('msg').textContent = 'Get ready…'; held = 1;
-    const tick = () => {
-      const a = auto ? ((s.k * .25 >= 10.5 && s.k * .25 < 14.5) ? 0 : (s.k * .25 >= 17 && s.k * .25 < 22) ? 2 : 1) : held;
+  // one live day on screen, used for the player and for the trained agent's replay
+  let liveId = 0;
+  function runLive(o) {
+    const id = ++liveId, s = C.reset(G.day), tr = { vHi: [], vLo: [], soc: [], act: [], V: [] }, f = fgeom();
+    let idleCum = 0, hourSum = 0, wasOut = false, acc = 0, last = null;
+    G.floaters = []; view = { tr, k: 0, s: null }; hud(o.title, 0, 0, 0, s.soc); battUI(s.soc, 1);
+    const doStep = () => {
+      const a = o.policy(s), before = s.bill + s.pen;
       C.step(s, a); tr.vHi.push(s.vHi); tr.vLo.push(s.vLo); tr.soc.push(s.soc); tr.act.push(a); tr.V.push(s.V);
-      idleCum = 0; for (let i = 0; i < s.k; i++) idleCum += G.idleStep[i];
-      view.k = s.k; view.s = s; hud('Your turn', s.k, idleCum - (s.bill + s.pen), s.violSteps, s.soc); redraw();
-      const t = s.t;
-      $('msg').textContent = a === 0 && s.pb === 0 ? 'Battery is full' : a === 2 && s.pb === 0 ? 'Battery is empty' : t < 9 ? 'Morning. Solar is on its way.' : t < 15.5 ? 'Solar peak. Watch the top line.' : t < 17 ? 'Evening peak is coming.' : t < 22.5 ? 'Expensive power, EVs charging.' : 'Night.';
-      if (s.done) { clearInterval(timer); tr.bill = s.bill; tr.pen = s.pen; tr.violSteps = s.violSteps; tr.total = s.bill + s.pen; G.you = tr; G.youScore = G.idle.total - tr.total; setTimeout(() => startTraining(true), 900); }
+      const gain = G.idleStep[s.k - 1] - (s.bill + s.pen - before);
+      idleCum += G.idleStep[s.k - 1]; hourSum += gain;
+      if (s.k % 4 === 0) { if (Math.abs(hourSum) >= 4) G.floaters.push({ x: f.bx(3), y: f.ly - 40, text: (hourSum > 0 ? '+$' : '−$') + Math.abs(Math.round(hourSum)), col: hourSum > 0 ? COL.teal : COL.orange, t0: performance.now() }); hourSum = 0; }
+      const out = s.vHi > CFG.vMax || s.vLo < CFG.vMin;
+      if (out && !wasOut && navigator.vibrate) navigator.vibrate(60);
+      wasOut = out;
+      view.k = s.k; view.s = s; hud(o.title, s.k, idleCum - (s.bill + s.pen), s.violSteps, s.soc); battUI(s.soc, a);
+      if (o.onStep) o.onStep(s, a, out);
     };
-    // per-step cost of doing nothing, for the live "saved" counter
+    const frame = now => {
+      if (id !== liveId) return;
+      if (last === null) last = now; acc += Math.min(120, now - last); last = now;
+      while (!s.done && acc >= o.stepMs(s)) { acc -= o.stepMs(s); doStep(); }
+      AT = now / 1000; redraw();
+      if (!s.done) requestAnimationFrame(frame);
+      else { tr.bill = s.bill; tr.pen = s.pen; tr.violSteps = s.violSteps; tr.total = s.bill + s.pen; setTimeout(() => { if (id === liveId) o.onDone(tr); }, 1000); }
+    };
+    // test hook: ?at=K jumps straight to step K and draws once (headless screenshots have no animation clock)
+    if (qs.get('at')) { for (let i = 0; i < +qs.get('at') && !s.done; i++) doStep(); AT = 1.23; redraw(); return; }
+    setTimeout(() => requestAnimationFrame(frame), o.delay || 0);
+  }
+
+  // ---------------------------------------------------------------- phase 1: the player's day
+  const timerRule = s => { const t = s.k * .25; return (t >= 10.5 && t < 14.5) ? 0 : (t >= 17 && t < 22) ? 2 : 1; };
+  function startPlay(sameDay) {
+    if (!(sameDay === true && G.day)) G.day = C.makeDay(Math.floor(Math.random() * 1e9));
+    G.idle = C.runDay(G.day, C.idle); G.ruleScore = G.idle.total - C.runDay(G.day, timerRule).total;
     (function () { const z = C.reset(G.day); G.idleStep = []; let prev = 0; while (!z.done) { C.step(z, 1); G.idleStep.push(z.bill + z.pen - prev); prev = z.bill + z.pen; } })();
-    setTimeout(() => { timer = setInterval(tick, STEP_MS); }, 1200);
+    G.mode = 'play'; show('sGame'); $('controls').style.display = 'flex'; $('controls').classList.remove('ro'); $('stat1Lab').textContent = 'Saved'; $('stat3Lab').textContent = 'Battery';
+    fit(); setMode(1);
+    const auto = qs.get('auto');
+    $('msg').textContent = 'Tap a button to switch the batteries. They stay in that mode.';
+    runLive({
+      title: 'Your turn', delay: 1500,
+      stepMs: s => { const t = s.k * .25; return (t < 6.5 || t >= 22.5) ? STEP_MS * 0.5 : STEP_MS; },     // the quiet night runs faster
+      policy: s => auto === 'idle' ? 1 : auto ? timerRule(s) : held,
+      onStep: (s, a, out) => {
+        if (auto) setMode(a);
+        if (a === 0 && s.soc >= 0.999) { setMode(1); nudge(); $('msg').textContent = 'Battery full. Switched to pause.'; return; }
+        if (a === 2 && s.soc <= 0.001) { setMode(1); nudge(); $('msg').textContent = 'Battery empty. Switched to pause.'; return; }
+        const t = s.t;
+        $('msg').textContent = s.vHi > CFG.vMax ? 'Voltage too high! Charge to soak up the solar.' : s.vLo < CFG.vMin ? 'Voltage too low! Discharge to help.' : t < 9 ? 'Morning. Solar is on its way.' : t < 15.5 ? 'Solar peak. Watch the top line.' : t < 17 ? 'Evening peak is coming.' : t < 22.5 ? 'Expensive power, EVs charging.' : 'Night.';
+      },
+      onDone: tr => { G.you = tr; G.youScore = G.idle.total - tr.total; G.rank = null; startTraining(true); }
+    });
   }
 
   // ---------------------------------------------------------------- phase 2: the agent trains
   function startTraining(firstTime) {
-    G.mode = 'train'; show('sGame'); $('controls').style.display = 'none'; fit();
+    liveId++; G.mode = 'train'; show('sGame'); $('controls').style.display = 'none'; fit();
     $('stat1Lab').textContent = 'Agent now'; $('stat2Lab').textContent = 'Outside limits'; $('stat3Lab').textContent = 'Exploring';
     const ag = C.makeAgent(Math.floor(Math.random() * 1e9), WEIGHTS[G.wKey]); G.agent = ag; G.curve = [];
     const first = C.trainEpisode(ag, G.day);                 // its very first try, on your day: random button presses
@@ -330,14 +395,14 @@
     G.curve.push([1, G.firstScore]);
     view = { tr: first, k: N, s: null };
     const T = C.TRAIN_EPISODES, FAST = !!qs.get('fast'), perFrameMax = FAST ? T / 8 : Math.ceil(T / (60 * 9));   // lasts at least ~9 s
-    let nextEval = 200, last = null;
+    let nextEval = 100, last = null;
     $('msg').textContent = 'It starts by pressing buttons at random.';
     const frame = () => {
       const t0 = performance.now(); let n = 0;
       while (ag.ep < T && n < perFrameMax && (FAST || performance.now() - t0 < 14)) { last = C.trainEpisode(ag); n++; }
       if (ag.ep >= nextEval || ag.ep >= T) {
         const g = C.runDay(G.day, s => C.greedy(ag, s)); G.curve.push([ag.ep, G.idle.total - g.total]); G.evalTr = g;
-        nextEval = ag.ep + (ag.ep < 2000 ? 200 : 500);
+        nextEval = ag.ep + (ag.ep < 3000 ? 100 : 500);
       }
       view = { tr: last, k: N, s: null };
       const g = G.evalTr || first;
@@ -346,7 +411,7 @@
       const f = ag.ep / T;
       $('msg').textContent = f < .15 ? 'Mostly random moves. It is finding out what hurts.' : f < .5 ? 'It repeats what paid off and explores less.' : f < .95 ? 'Fine-tuning the timing.' : 'Done. Now it plays your day.';
       redraw();
-      if (ag.ep < T) requestAnimationFrame(frame); else setTimeout(startReplay, 900);
+      if (ag.ep < T) requestAnimationFrame(frame); else { if (G.wKey === 'both') G.rank = rankOf(G.youScore, G.curve); setTimeout(startReplay, 900); }
     };
     setTimeout(() => requestAnimationFrame(frame), firstTime ? 1400 : 500);
   }
@@ -354,25 +419,32 @@
   // ---------------------------------------------------------------- phase 3: the trained agent plays your day
   function startReplay() {
     G.mode = 'replay'; $('stat1Lab').textContent = 'Saved'; $('stat3Lab').textContent = 'Battery';
-    const s = C.reset(G.day), tr = { vHi: [], vLo: [], soc: [], act: [], V: [] }; let idleCum = 0;
-    view = { tr, k: 0, s: null }; $('msg').textContent = 'Same day, same batteries. No more exploring.';
-    const iv = setInterval(() => {
-      const a = C.greedy(G.agent, s); C.step(s, a); tr.vHi.push(s.vHi); tr.vLo.push(s.vLo); tr.soc.push(s.soc); tr.act.push(a); tr.V.push(s.V);
-      idleCum += G.idleStep[s.k - 1]; view.k = s.k; view.s = s; hud('The trained agent', s.k, idleCum - (s.bill + s.pen), s.violSteps, s.soc); redraw();
-      if (s.done) { clearInterval(iv); tr.bill = s.bill; tr.pen = s.pen; tr.violSteps = s.violSteps; tr.total = s.bill + s.pen; G.agentTr = tr; G.agentScore = G.idle.total - tr.total; setTimeout(showResult, 1100); }
-    }, qs.get('fast') ? 8 : 60);
+    $('controls').style.display = 'flex'; $('controls').classList.add('ro'); setMode(1);
+    $('msg').textContent = 'Same day, same batteries. Watch its switch.';
+    runLive({ title: 'The trained agent', stepMs: () => qs.get('fast') ? 8 : 70, policy: s => C.greedy(G.agent, s), onStep: (s, a) => setMode(a),
+      onDone: tr => { G.agentTr = tr; G.agentScore = G.idle.total - tr.total; showResult(); } });
   }
 
   // ---------------------------------------------------------------- results
+  // how many practice days the agent needed before its best policy so far matched the player's score
+  function rankOf(you, curve) {
+    let best = -1e9;
+    for (const p of curve) { best = Math.max(best, p[1]); if (best >= you) return { days: p[0], beat: false }; }
+    return { days: C.TRAIN_EPISODES, beat: true };
+  }
+  const roundDays = d => d <= 1 ? 1 : d < 1000 ? Math.round(d / 100) * 100 : Math.round(d / 500) * 500;
   function showResult() {
     G.mode = 'result'; show('sResult');
     const you = G.youScore, ag = G.agentScore, first = G.firstScore, d = Math.round(ag - you);
     const sub = tr => (tr.violSteps ? tr.violSteps * 15 + ' min outside the limits' : 'always inside the limits') + ' · bill ' + fmt$(tr.bill);
-    let head, txt;
+    let head, txt, top = '';
     if (G.wKey === 'both') {
-      head = d > 15 ? 'The agent beat you by ' + fmt$(d) : d < -15 ? 'You beat the agent by ' + fmt$(-d) : 'A tie with the agent';
-      txt = d < -15 ? 'Well played. Its first try scored ' + fmt$(first) + '. After 40,000 practice days it nearly matched you, with no instructions at all.'
-                    : 'Its first try scored ' + fmt$(first) + '. It was never shown the right move. It only saw the reward after each action.';
+      const r = G.rank || { days: 1, beat: false }, stars = (you > Math.max(0, first) ? 1 : 0) + (you > G.ruleScore ? 1 : 0) + (you > ag ? 1 : 0);
+      top = '<div class="stars">' + [0, 1, 2].map(i => i < stars ? '<b>★</b>' : '★').join('') + '</div>' +
+            '<p style="margin:0">You play like an agent with</p><span class="rank">' + (r.beat ? 'more than 40,000' : roundDays(r.days).toLocaleString('en-US')) + (r.days <= 1 && !r.beat ? ' day' : ' days') + '</span><p>of practice.</p>';
+      head = d > 15 ? 'The trained agent beat you by ' + fmt$(d) : d < -15 ? 'You beat the trained agent by ' + fmt$(-d) : 'A tie with the trained agent';
+      txt = (r.beat ? 'It never caught up with you. ' : r.days <= 1 ? 'That is where it started too: pressing buttons at random. ' : 'After that many days it was playing as well as you did. ')
+          + 'Nobody showed it the right move. It only saw the reward after each action.';
     } else if (G.wKey === 'cost') {
       head = 'Told to care only about the bill';
       txt = 'The agent got a bill of ' + fmt$(G.agentTr.bill) + ' and left the voltage outside the limits for ' + G.agentTr.violSteps * 15 + ' minutes. It did what the reward said, not what you meant.';
@@ -380,21 +452,21 @@
       head = 'Told to care only about the voltage';
       txt = 'The agent held the voltage, with ' + G.agentTr.violSteps * 15 + ' minutes outside the limits, and ignored the price of power. Its bill was ' + fmt$(G.agentTr.bill) + '.';
     }
-    $('resHead').textContent = head; $('resText').textContent = txt;
+    $('resTop').innerHTML = top; $('resHead').textContent = head; $('resText').textContent = txt;
     const rows = [['Agent, first try', first, G.first, '#A9B4BC'], ['You', you, G.you, COL.gold], ['Agent, after 40,000 days', ag, G.agentTr, COL.teal]];
     const max = Math.max(1, ...rows.map(r => r[1]));
     $('bars').innerHTML = rows.map((r, i) => '<div class="bar"><div class="lab"><span>' + r[0] + '</span><b>' + fmt$(r[1]) + '</b></div><div class="track"><div class="fill" id="f' + i + '" style="background:' + r[3] + '"></div></div><div class="sub">' + sub(r[2]) + '</div></div>').join('');
     requestAnimationFrame(() => setTimeout(() => rows.forEach((r, i) => { $('f' + i).style.width = Math.max(1.5, r[1] / max * 100) + '%'; }), 60));
-    $('resNote').textContent = 'Score = dollars saved against doing nothing on this day (bill ' + fmt$(G.idle.bill) + ', ' + G.idle.violSteps * 15 + ' min outside the limits), with a penalty for every 15 minutes outside the limits.';
+    $('resNote').textContent = 'Stars: beat the agent\'s first try, beat a simple timer (' + fmt$(G.ruleScore) + '), beat the trained agent. Score = dollars saved against doing nothing on this day, minus a penalty for every 15 minutes outside the limits.';
   }
 
   // ---------------------------------------------------------------- navigation
-  $('btnStart').onclick = startPlay; $('btnAgain').onclick = () => { G.wKey = 'both'; startPlay(); };
+  $('btnStart').onclick = () => startPlay(false); $('btnAgain').onclick = () => { G.wKey = 'both'; startPlay(false); };
   $('btnReward').onclick = () => { show('sReward'); document.querySelectorAll('.chip').forEach(c => c.classList.toggle('sel', c.dataset.w === G.wKey)); };
   document.querySelectorAll('.chip').forEach(c => c.onclick = () => { G.wKey = c.dataset.w; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('sel', x === c)); });
   $('btnTrain').onclick = () => startTraining(false); $('btnBack1').onclick = () => show('sResult');
   $('btnAbout1').onclick = $('btnAbout2').onclick = e => { if (e) e.preventDefault(); show('sAbout'); }; $('btnBack2').onclick = () => show(G.lastScreen);
-  if (qs.get('auto')) startPlay();
+  if (qs.get('auto')) startPlay(false);
   // test hook: ?demo=result|cost|volt|about|reward computes a whole round synchronously and jumps to that screen
   if (qs.get('demo')) {
     const d = qs.get('demo'); G.wKey = d === 'cost' || d === 'volt' ? d : 'both';
@@ -402,7 +474,9 @@
     const rule = s => { const t = s.k * .25; return (t >= 11 && t < 13.5) ? 0 : (t >= 18 && t < 21) ? 2 : 1; };
     G.you = C.runDay(G.day, rule); G.youScore = G.idle.total - G.you.total;
     const ag = C.makeAgent(7, WEIGHTS[G.wKey]); G.agent = ag; G.first = C.trainEpisode(ag, G.day); G.firstScore = G.idle.total - G.first.total;
-    while (ag.ep < C.TRAIN_EPISODES) C.trainEpisode(ag);
+    G.ruleScore = G.idle.total - C.runDay(G.day, timerRule).total; G.curve = [[1, G.firstScore]];
+    while (ag.ep < C.TRAIN_EPISODES) { C.trainEpisode(ag); if (ag.ep % (ag.ep < 3000 ? 100 : 500) === 0) G.curve.push([ag.ep, G.idle.total - C.runDay(G.day, s => C.greedy(ag, s)).total]); }
+    G.rank = G.wKey === 'both' ? rankOf(G.youScore, G.curve) : null;
     G.agentTr = C.runDay(G.day, s => C.greedy(ag, s)); G.agentScore = G.idle.total - G.agentTr.total;
     showResult(); if (d === 'about') show('sAbout'); if (d === 'reward') $('btnReward').onclick();
   }
